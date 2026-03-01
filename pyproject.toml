@@ -1,0 +1,72 @@
+[project]
+name = "catalogador"
+version = "0.1.0"
+description = "File cataloging tool for detecting duplicates across storage units"
+authors = [
+    {name = "ubuntu"}
+]
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "sqlalchemy>=2.0,<3.0",
+    "psycopg2-binary>=2.9,<3.0",
+    "alembic>=1.13,<2.0",
+    "typer>=0.12,<1.0",
+    "pydantic-settings>=2.0,<3.0",
+    "rich>=13.0,<14.0",
+]
+
+[project.scripts]
+catalogador = "catalogador.cli.main:app"
+
+[tool.poetry]
+packages = [{include = "catalogador", from = "src"}]
+
+[tool.poetry.group.dev.dependencies]
+pytest = ">=8.0,<9.0"
+pytest-cov = ">=5.0,<6.0"
+ruff = ">=0.5,<1.0"
+mypy = ">=1.10,<2.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+# --- Ruff ---
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "SIM", # flake8-simplify
+    "RUF", # ruff-specific
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["catalogador"]
+
+# --- mypy ---
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+plugins = []
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+
+# --- pytest ---
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra -q"
