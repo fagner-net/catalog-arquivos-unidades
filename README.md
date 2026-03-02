@@ -2,6 +2,15 @@
 
 Ferramenta de linha de comando para catalogar arquivos distribuídos em várias unidades de armazenamento (discos físicos, NAS, Google Drive, etc.) e detectar duplicatas — sem copiar os arquivos, apenas lendo e indexando seus metadados.
 
+## Status do projeto
+
+| Verificação | Resultado |
+|---|---|
+| Testes (pytest) | 46 passando |
+| Lint (ruff) | All checks passed |
+| Tipos (mypy --strict) | No issues found |
+| Migração inicial | Criada, aguardando banco PostgreSQL |
+
 ## O problema
 
 Quem mantém backups em vários HDs externos, NAS e serviços de nuvem acaba com muitas cópias dos mesmos arquivos e pastas espalhadas. Localizar o que é original e o que é duplicata manualmente é inviável quando se tem milhares de arquivos.
@@ -38,6 +47,29 @@ Arquivos ignorados: `.exe`, `.com`, `.dll`, `.sys`, `.bat`, `.msi`, `.tmp`, `.lo
 | Não-vídeo       | > 100 MB    | Hash parcial (início + meio + fim)      |
 | Vídeo           | > 100 MB    | Sem hash (comparação apenas por tamanho)|
 
+## Modelo de dados
+
+```
+storage_units              scan_sessions              file_records
+┌──────────────┐           ┌──────────────────┐       ┌───────────────────┐
+│ id (PK)      │──1:N──▶   │ id (PK)          │──1:N─▶│ id (PK)           │
+│ alias (UQ)   │           │ storage_unit_id   │       │ scan_session_id   │
+│ unit_type    │           │ root_path         │       │ full_path         │
+│ created_at   │           │ started_at        │       │ file_name         │
+│ updated_at   │           │ finished_at       │       │ extension         │
+└──────────────┘           │ total_files       │       │ size_bytes        │
+                           │ total_errors      │       │ file_hash         │
+                           └──────────────────┘       │ hash_algorithm    │
+                                                      │ created_at_os     │
+                                                      │ modified_at_os    │
+                                                      │ cataloged_at      │
+                                                      └───────────────────┘
+```
+
+- Cada **unidade** (alias + tipo) pode ter várias **sessões de scan**
+- Cada sessão registra o caminho raiz escaneado e produz vários **registros de arquivo**
+- O caminho raiz fica na sessão (não na unidade), pois pontos de montagem podem mudar
+
 ## Pré-requisitos
 
 - **Python 3.12+**
@@ -72,7 +104,7 @@ cd catalog-arquivos-unidades
 # Instale as dependências
 poetry install
 
-# Aplique as migrações do banco de dados
+# Aplique a migração inicial (cria as 3 tabelas + índices)
 poetry run alembic upgrade head
 ```
 
@@ -86,12 +118,12 @@ export CATALOGADOR_DATABASE_URL="postgresql://usuario:senha@host:5432/nome_do_ba
 
 Outras variáveis de ambiente disponíveis:
 
-| Variável                            | Padrão   | Descrição                                |
-|-------------------------------------|----------|------------------------------------------|
-| `CATALOGADOR_DATABASE_URL`          | `postgresql://localhost:5432/catalogador` | URL de conexão ao PostgreSQL |
-| `CATALOGADOR_LOG_LEVEL`             | `INFO`   | Nível de log (`DEBUG`, `INFO`, `WARNING`) |
-| `CATALOGADOR_HASH_CHUNK_SIZE`       | `8192`   | Tamanho do chunk para leitura de hash (bytes) |
-| `CATALOGADOR_LARGE_FILE_THRESHOLD_MB` | `100`  | Limite para considerar arquivo grande (MB) |
+| Variável                              | Padrão                                    | Descrição                                     |
+|---------------------------------------|-------------------------------------------|-----------------------------------------------|
+| `CATALOGADOR_DATABASE_URL`            | `postgresql://localhost:5432/catalogador`  | URL de conexão ao PostgreSQL                  |
+| `CATALOGADOR_LOG_LEVEL`               | `INFO`                                    | Nível de log (`DEBUG`, `INFO`, `WARNING`)     |
+| `CATALOGADOR_HASH_CHUNK_SIZE`         | `8192`                                    | Tamanho do chunk para leitura de hash (bytes) |
+| `CATALOGADOR_LARGE_FILE_THRESHOLD_MB` | `100`                                     | Limite para considerar arquivo grande (MB)    |
 
 ## Uso
 
@@ -167,7 +199,8 @@ Remove a unidade e **todos os dados de varredura associados**.
 poetry run pytest                # Todos os testes
 poetry run pytest -v             # Saída detalhada
 poetry run pytest tests/test_scanner.py                          # Arquivo específico
-poetry run pytest tests/test_scanner.py::test_walk_directory     # Teste específico
+poetry run pytest tests/test_scanner.py::TestWalkDirectory       # Classe específica
+poetry run pytest tests/test_scanner.py::TestWalkDirectory::test_walk_finds_included_files  # Teste específico
 poetry run pytest -k "test_hash_large_file"                      # Por palavra-chave
 poetry run pytest --cov=catalogador --cov-report=term-missing    # Com cobertura
 ```
@@ -178,7 +211,7 @@ poetry run pytest --cov=catalogador --cov-report=term-missing    # Com cobertura
 poetry run ruff check src/ tests/        # Verificar lint
 poetry run ruff check --fix src/ tests/  # Corrigir automaticamente
 poetry run ruff format src/ tests/       # Formatar código
-poetry run mypy src/                     # Verificação de tipos
+poetry run mypy src/                     # Verificação de tipos (strict)
 ```
 
 ### Migrações do banco
@@ -194,27 +227,54 @@ poetry run alembic upgrade head
 ## Estrutura do projeto
 
 ```
-src/catalogador/
-├── config.py              # Configurações via variáveis de ambiente
-├── cli/
-│   ├── main.py            # Entry point do CLI (typer)
-│   ├── unit_commands.py   # Gerenciamento de unidades
-│   ├── scan_commands.py   # Comandos de varredura
-│   └── report_commands.py # Relatórios e exportação
-├── db/
-│   ├── models.py          # StorageUnit, ScanSession, FileRecord
-│   ├── session.py         # Conexão com o banco
-│   └── repository.py      # Camada de acesso a dados
-├── scanner/
-│   ├── filesystem.py      # Percorre diretórios e coleta metadados
-│   └── hasher.py          # Estratégias de hashing
-├── reports/
-│   ├── duplicates.py      # Detecção de duplicatas
-│   └── export.py          # Exportação CSV
-└── utils/
-    ├── exceptions.py      # Exceções customizadas
-    └── filters.py         # Filtro de extensões
+catalog-arquivos-unidades/
+├── pyproject.toml             # Dependências, config de ruff/mypy/pytest
+├── poetry.lock
+├── alembic.ini                # Configuração do Alembic
+├── alembic/
+│   ├── env.py                 # Conectado ao Base dos models
+│   └── versions/              # Migrações (initial_tables já criada)
+├── src/catalogador/
+│   ├── config.py              # Configurações via variáveis de ambiente
+│   ├── cli/
+│   │   ├── main.py            # Entry point do CLI (typer)
+│   │   ├── unit_commands.py   # Gerenciamento de unidades
+│   │   ├── scan_commands.py   # Comandos de varredura
+│   │   └── report_commands.py # Relatórios e exportação
+│   ├── db/
+│   │   ├── models.py          # StorageUnit, ScanSession, FileRecord
+│   │   ├── session.py         # Conexão com o banco
+│   │   └── repository.py     # Camada de acesso a dados
+│   ├── scanner/
+│   │   ├── filesystem.py      # Percorre diretórios e coleta metadados
+│   │   └── hasher.py          # Estratégias de hashing (full/partial/skip)
+│   ├── reports/
+│   │   ├── duplicates.py      # Detecção de duplicatas por hash e tamanho
+│   │   └── export.py          # Exportação CSV
+│   └── utils/
+│       ├── exceptions.py      # Exceções customizadas
+│       └── filters.py         # Filtro de extensões incluídas/ignoradas
+└── tests/                     # 46 testes (pytest)
+    ├── conftest.py            # Fixtures compartilhadas
+    ├── test_filters.py
+    ├── test_hasher.py
+    ├── test_scanner.py
+    ├── test_models.py
+    ├── test_units.py
+    └── test_reports.py
 ```
+
+## Tech stack
+
+- **Python 3.12+** com type annotations completas
+- **Poetry** para gerenciamento de dependências
+- **SQLAlchemy 2.x** ORM com `Mapped[]` / `mapped_column()`
+- **Alembic** para migrações de banco de dados
+- **Typer + Rich** para CLI com saída formatada
+- **pydantic-settings** para configuração tipada
+- **Ruff** para lint e formatação
+- **mypy** em modo strict para verificação de tipos
+- **pytest** com cobertura de código
 
 ## Licença
 
