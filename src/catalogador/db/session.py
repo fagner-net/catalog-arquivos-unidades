@@ -2,7 +2,7 @@
 
 import logging
 
-from sqlalchemy import create_engine
+from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from catalogador.config import get_settings
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 _session_factory: sessionmaker[Session] | None = None
 
 
-def get_engine(database_url: str | None = None):
+def get_engine(database_url: str | None = None) -> Engine:
     """Create a SQLAlchemy engine from settings or a provided URL."""
     url = database_url or get_settings().database_url
     return create_engine(url, echo=False)

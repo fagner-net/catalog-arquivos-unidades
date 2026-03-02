@@ -45,14 +45,14 @@ def find_duplicate_files_by_hash(session: Session) -> list[tuple[str, int, list[
     # Group by hash
     grouped: dict[str, list[dict[str, str]]] = {}
     for row in rows:
-        h = row.file_hash  # type: ignore[union-attr]
+        h = row.file_hash
         entry = {
             "path": row.full_path,
             "name": row.file_name,
             "size": str(row.size_bytes),
             "unit": row.alias,
         }
-        grouped.setdefault(h, []).append(entry)  # type: ignore[arg-type]
+        grouped.setdefault(h, []).append(entry)
 
     result = [(h, len(files), files) for h, files in grouped.items()]
     logger.info("Found %d groups of duplicate files", len(result))
